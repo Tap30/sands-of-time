@@ -11,28 +11,45 @@ static time_t       (*real_time)            (time_t *);
 static int          (*real_ftime)           (struct timeb *);
 static int          (*real_gettimeofday)    (struct timeval *, void *);
 static int          (*real_clock_gettime)   (clockid_t clk_id, struct timespec *tp);
-static int (*real_sigaction) (int signum, const struct sigaction *act, struct sigaction *oldact);
-static int initialized = 0;
-static int specifiedtime = 1600000;
+static int          (*real_sigaction)       (int signum, const struct sigaction *act, struct sigaction *oldact);
 
-void usr_signal_handler(int signum) {
-    printf("Caught signal %d\n",signum);
-    // Cleanup and close up stuff here
-    int * a;
-    a = 0;
-    *a = 12313;
-}
+void                (*real_usr_signal_handler)         (int);
+static int          initialized = 0;
+static int          specifiedtime = 1600000;
 
-void init() {
-    printf("init");
-    real_sigaction = dlsym(RTLD_NEXT, "sigaction");
-    // sigaction(SIGUSR2, usr_signal_handler);
-    initialized = 1;
+int usr_signal_handler(int signum) {
+    printf("mia handles request %d\n", signum);
+    if (real_usr_signal_handler) {
+        (*real_usr_signal_handler)(signum);
+    }
+    printf("mia done request %d\n", signum);
+    return 0;
 }
 
 int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact) {
-    printf("passing through this\n");
-    return (*real_sigaction)(signum, act, oldact);
+    if (SIGUSR2 == signum && act != NULL) {
+        real_usr_signal_handler = act->sa_handler;
+        return 0;
+    } else {
+        return (*real_sigaction)(signum, act, oldact);
+    }
+}
+
+void submit_usr_handler() {
+    /* Start listening on sig usr2 */
+    struct sigaction new_action;
+    new_action.sa_handler = usr_signal_handler;
+    sigemptyset (&new_action.sa_mask);
+    new_action.sa_flags = 0;
+
+    (*real_sigaction)(SIGUSR2, &new_action, NULL);
+    // sigaction(SIGUSR2, usr_signal_handler);
+}
+
+void init() {
+    real_sigaction = dlsym(RTLD_NEXT, "sigaction");
+    submit_usr_handler();
+    initialized = 1;
 }
 
 int clock_gettime(clockid_t clk_id, struct timespec *tp) {
