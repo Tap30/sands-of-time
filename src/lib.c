@@ -6,6 +6,12 @@
 #include <sys/types.h>
 #include <time.h>
 #include <sys/timeb.h>
+#include <sys/time.h>
+
+#include <mach/mach.h>
+#include <mach/mach_time.h>
+
+void init();
 
 static time_t       (*real_time)            (time_t *);
 static int          (*real_ftime)           (struct timeb *);
@@ -26,7 +32,15 @@ int usr_signal_handler(int signum) {
     return 0;
 }
 
+uint64_t mach_absolute_time() {
+    return 150000000;
+}
+
 int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact) {
+    if (!initialized) {
+        init();
+    }
+
     if (SIGUSR2 == signum && act != NULL) {
         real_usr_signal_handler = act->sa_handler;
         return 0;
@@ -48,11 +62,13 @@ void submit_usr_handler() {
 
 void init() {
     real_sigaction = dlsym(RTLD_NEXT, "sigaction");
+    real_gettimeofday = dlsym(RTLD_NEXT, "gettimeofday");
     submit_usr_handler();
     initialized = 1;
 }
 
 int clock_gettime(clockid_t clk_id, struct timespec *tp) {
+    printf("clock_gettime \n");
     if (!initialized) {
         init();
     }
@@ -63,12 +79,14 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp) {
 }
 
 int gettimeofday(struct timeval *tp, void *tz) {
+    printf("gettimeofday :D\n");
     if (!initialized) {
         init();
     }
     // TODO call real time and do timeshift
     tp->tv_sec = specifiedtime;
     tp->tv_usec = 0;
+    //(*real_gettimeofday)(tp, tz);
     return 0;
 }
 
