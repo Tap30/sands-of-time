@@ -1,4 +1,7 @@
+#define _GNU_SOURCE
+
 #include <signal.h>
+#include <dlfcn.h>
 
 #include <sys/types.h>
 #include <time.h>
@@ -8,7 +11,7 @@ static time_t       (*real_time)            (time_t *);
 static int          (*real_ftime)           (struct timeb *);
 static int          (*real_gettimeofday)    (struct timeval *, void *);
 static int          (*real_clock_gettime)   (clockid_t clk_id, struct timespec *tp);
-
+static int (*real_sigaction) (int signum, const struct sigaction *act, struct sigaction *oldact);
 static int initialized = 0;
 static int specifiedtime = 1600000;
 
@@ -22,8 +25,14 @@ void usr_signal_handler(int signum) {
 
 void init() {
     printf("init");
-    signal(SIGUSR2, usr_signal_handler);
+    real_sigaction = dlsym(RTLD_NEXT, "sigaction");
+    // sigaction(SIGUSR2, usr_signal_handler);
     initialized = 1;
+}
+
+int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact) {
+    printf("passing through this\n");
+    return (*real_sigaction)(signum, act, oldact);
 }
 
 int clock_gettime(clockid_t clk_id, struct timespec *tp) {
