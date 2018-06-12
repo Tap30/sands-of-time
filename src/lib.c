@@ -16,11 +16,9 @@
 #include <mach/mach_time.h>
 #endif
 
+#define MEGA 1000000
+#define KILO 1000
 
-struct fake_time {
-	int seconds; // posix time, from epoch
-	int microseconds;
-};
 
 void init();
 
@@ -35,18 +33,38 @@ void                (*real_usr_signal_handler)  (int);
 static int          initialized = 0;
 static int          specifiedtime = 1600000;
 
-static int			fake_time_alpha = 0;
-static int			fake_time_beta = 0;
-
-int 				get_fake_time				(struct fake_time *time);
+static double			fake_time_alpha = 1;
+static struct timespec		fake_time_beta = {0, 0};
 
 
-int get_fake_time(struct fake_time *time)
+
+int get_real_time(struct timespec *time)
 {
-	fake_time_alpha = 0;
-	fake_time_beta = 0;
-	time->seconds = 0;
-	time->microseconds = 0;
+#ifdef __APPLE__
+	// TODO @rajabzz
+	return 0;
+#else
+	return (*real_clock_gettime)(CLOCK_MONOTONIC, time);
+#endif // __APPLE__	
+}
+
+int get_fake_time(struct timespec *time)
+{
+	int status;
+	struct timespec real;
+
+	status = get_real_time(&real);
+
+	if (status < 0) {
+		return status;
+	}
+
+	time->tv_sec = fake_time_alpha * real.tv_sec + fake_time_beta.tv_sec;
+	time->tv_nsec = fake_time_alpha * real.tv_nsec + fake_time_beta.tv_nsec;
+
+	time->tv_sec += time->tv_nsec / MEGA;
+	time->tv_nsec %= MEGA;
+
 	return 0;
 }
 
@@ -56,6 +74,7 @@ void usr_signal_handler(int signum)
 	if (real_usr_signal_handler) {
 		(*real_usr_signal_handler)(signum);
 	}
+	// handle socket?
 	printf("mia done request %d\n", signum);
 }
 
@@ -100,16 +119,12 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp)
 	if (!initialized) {
 		init();
 	}
-	struct timespec real_tp;
-	if ((*real_clock_gettime)(clk_id, &real_tp) != 0) {
-		// TODO put sth here
-		return 1;
-	}
 
-	// TODO  do timeshift
-	tp->tv_nsec = 0;
-	tp->tv_sec = specifiedtime;
-	return 0;
+	if(clk_id != CLOCK_MONOTONIC) {
+		// TODO implement something here
+	}
+	
+	return get_fake_time(tp);
 }
 
 uint64_t mach_absolute_time()
@@ -124,14 +139,17 @@ int gettimeofday(struct timeval *__restrict tp, __timezone_ptr_t tz)
 	if (!initialized) {
 		init();
 	}
-	struct timeval real_tp;
-	if ((*real_gettimeofday)(&real_tp, tz) != 0) {
-		// TODO put sth here
-		return 1;
+	struct timespec real_tp;
+	int status = get_fake_time(&real_tp);
+	
+	tp->tv_sec = real_tp.tv_sec;
+	tp->tv_usec = real_tp.tv_nsec / KILO;
+
+	if(tz != NULL) {
+		// TODO
 	}
-	tp->tv_sec = specifiedtime;
-	tp->tv_usec = 0;
-	return 0;
+
+	return status;
 }
 
 time_t time(time_t *tloc)
