@@ -16,6 +16,7 @@
 #include <mach/mach_time.h>
 #endif
 
+#define GIGA 1000000000
 #define MEGA 1000000
 #define KILO 1000
 
@@ -62,8 +63,8 @@ int get_fake_time(struct timespec *time)
 	time->tv_sec = fake_time_alpha * real.tv_sec + fake_time_beta.tv_sec;
 	time->tv_nsec = fake_time_alpha * real.tv_nsec + fake_time_beta.tv_nsec;
 
-	time->tv_sec += time->tv_nsec / MEGA;
-	time->tv_nsec %= MEGA;
+	time->tv_sec += time->tv_nsec / GIGA;
+	time->tv_nsec %= GIGA;
 
 	return 0;
 }
@@ -145,7 +146,7 @@ int gettimeofday(struct timeval *__restrict tp, __timezone_ptr_t tz)
 	tp->tv_sec = real_tp.tv_sec;
 	tp->tv_usec = real_tp.tv_nsec / KILO;
 
-	if(tz != NULL) {
+	if (tz != NULL) {
 		// TODO
 	}
 
@@ -157,15 +158,14 @@ time_t time(time_t *tloc)
 	if (!initialized) {
 		init();
 	}
-	time_t real_tloc;
-	if ((*real_time)(&real_tloc) != 0) {
-		// TODO put sth here
-		return 1;
-	}
+
+	struct timespec fake_time;
+	int status = get_fake_time(&fake_time);
 	if (tloc != NULL) {
-		*tloc = specifiedtime;
+		(*tloc) = fake_time.tv_sec;
 	}
-	return specifiedtime;
+
+	return status;
 }
 
 int ftime(struct timeb * s)
@@ -173,13 +173,11 @@ int ftime(struct timeb * s)
 	if (!initialized) {
 		init();
 	}
-	struct timeb real_s;
-	if ((*real_ftime)(&real_s) != 0) {
-		// TODO put sth here
-		return 1;
-	}
-	s->time = specifiedtime;
-	s->millitm = 0;
 
-	return 0;
+	struct timespec fake_time;
+	int status = get_fake_time(&fake_time);
+	s->time = fake_time.tv_sec;
+	s->millitm = fake_time.tv_nsec / MEGA;
+
+	return status;
 }
