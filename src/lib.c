@@ -43,8 +43,10 @@ int 				get_fake_time				(struct fake_time *time);
 
 int get_fake_time(struct fake_time *time)
 {
-	time.seconds = 0;
-	time.microseconds = 0;
+    fake_time_alpha = 0;
+    fake_time_beta = 0;
+	time->seconds = 0;
+	time->microseconds = 0;
 	return 0;
 }
 
