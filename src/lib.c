@@ -7,9 +7,13 @@
 #include <time.h>
 #include <sys/timeb.h>
 #include <sys/time.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <inttypes.h>
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #ifdef __APPLE__
 #include <mach/mach.h>
@@ -32,12 +36,32 @@ static uint64_t     (*real_mach_absolute_time)  ();
 
 void                (*real_usr_signal_handler)  (int);
 static int          initialized = 0;
-static int          specifiedtime = 1600000;
 
 static double			fake_time_alpha = 1;
 static struct timespec		fake_time_beta = {0, 0};
+static struct timespec		fake_time_t0 = {0, 0};
+static time_t			fake_time_delta = 0;
 
 
+static int	    sock = 0;
+static FILE*	    sock_stream = NULL;
+
+
+
+void bend_time(struct timespec *result, struct timespec *t0, struct timespec *t1, double alpha)
+{
+	result->tv_sec = t0->tv_sec + alpha * t1->tv_sec;
+	result->tv_nsec = t0->tv_nsec + alpha * t1->tv_nsec;
+
+	if(result->tv_nsec > 0) {
+		result->tv_sec += result->tv_nsec / GIGA;
+		result->tv_nsec %= GIGA;
+	} else {
+		int rem = (-result->tv_nsec) / GIGA + 1;
+		result->tv_sec -= rem;
+		result->tv_nsec += rem * GIGA;
+	}
+}
 
 int get_real_time(struct timespec *time)
 {
@@ -45,7 +69,11 @@ int get_real_time(struct timespec *time)
 	// TODO @rajabzz
 	return 0;
 #else
-	return (*real_clock_gettime)(CLOCK_MONOTONIC, time);
+	int status = (*real_clock_gettime)(CLOCK_MONOTONIC, time);
+
+	time->tv_sec += fake_time_delta;
+
+	return status;
 #endif // __APPLE__	
 }
 
@@ -60,12 +88,16 @@ int get_fake_time(struct timespec *time)
 		return status;
 	}
 
-	time->tv_sec = fake_time_alpha * real.tv_sec + fake_time_beta.tv_sec;
-	time->tv_nsec = fake_time_alpha * real.tv_nsec + fake_time_beta.tv_nsec;
+	// time = t' + (t-t0) * alpha
+	// t => real
+	// t'=> beta
+	// t0 => t0
 
-	time->tv_sec += time->tv_nsec / GIGA;
-	time->tv_nsec %= GIGA;
+	real.tv_sec -= fake_time_t0.tv_sec;
+	real.tv_nsec -= fake_time_t0.tv_nsec;
 
+	bend_time(time, &fake_time_beta, &real, fake_time_alpha);
+	
 	return 0;
 }
 
@@ -75,7 +107,12 @@ void usr_signal_handler(int signum)
 	if (real_usr_signal_handler) {
 		(*real_usr_signal_handler)(signum);
 	}
-	// handle socket?
+
+	// let's read socket
+
+	fscanf(sock_stream, "%lf:%ld:%ld", &fake_time_alpha, &(fake_time_beta.tv_sec), &(fake_time_beta.tv_nsec));
+	get_real_time(&fake_time_t0);
+	
 	printf("mia done request %d\n", signum);
 }
 
@@ -112,6 +149,43 @@ void init()
 	real_ftime = dlsym(RTLD_NEXT, "ftime");
 	real_mach_absolute_time = dlsym(RTLD_NEXT, "mach_absolute_time");
 	submit_usr_handler();
+
+	sock = socket(AF_UNIX, SOCK_STREAM, 0);
+	if(sock < 0) {
+		perror("opening stream socket");
+		exit(1);
+	}
+
+
+#ifndef __APPLE__
+	struct timespec tp;
+	struct timeval tv;
+	(*real_clock_gettime)(CLOCK_MONOTONIC, &tp);
+	(*real_gettimeofday)(&tv, NULL);
+
+	fake_time_delta = tv.tv_sec - tp.tv_sec;
+#endif
+	
+	struct sockaddr_un server;
+
+	server.sun_family = AF_UNIX;
+	strcpy(server.sun_path, getenv("SANDS_SUN"));
+	
+	if(connect(sock, (struct sockaddr *) &server, sizeof(struct sockaddr_un)) < 0) {
+		close(sock);
+		perror("connecting stream socket");
+		exit(1);
+	}
+
+	sock_stream = fdopen(sock, "r");
+
+	if(sock_stream == NULL) {
+		close(sock);
+		perror("connecting stream socket");
+		exit(1);
+	}
+
+
 	initialized = 1;
 }
 
@@ -130,6 +204,7 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp)
 
 uint64_t mach_absolute_time()
 {
+	// TODO @rajabzz
 	uint64_t real_mach_time = real_mach_absolute_time();
 	// TODO time shift
 	return real_mach_time - 150000000;
@@ -145,6 +220,7 @@ int gettimeofday(struct timeval *__restrict tp, __timezone_ptr_t tz)
 	
 	tp->tv_sec = real_tp.tv_sec;
 	tp->tv_usec = real_tp.tv_nsec / KILO;
+
 
 	if (tz != NULL) {
 		// TODO
