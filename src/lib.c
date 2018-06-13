@@ -37,23 +37,27 @@ static uint64_t     (*real_mach_absolute_time)  ();
 void                (*real_usr_signal_handler)  (int);
 static int          initialized = 0;
 
-static double			fake_time_alpha = 1;
+static double				fake_time_alpha = 1;
 static struct timespec		fake_time_beta = {0, 0};
 static struct timespec		fake_time_t0 = {0, 0};
-static time_t			fake_time_delta = 0;
+static time_t				fake_time_delta = 0;
 
 
-static int	    sock = 0;
-static FILE*	    sock_stream = NULL;
+static int	    	fd = 0;
+static FILE*	    fd_stream = NULL;
 
 
 
 void bend_time(struct timespec *result, struct timespec *t0, struct timespec *t1, double alpha)
 {
-	result->tv_sec = t0->tv_sec + alpha * t1->tv_sec;
-	result->tv_nsec = t0->tv_nsec + alpha * t1->tv_nsec;
+	double seconds_reminder = alpha * (double) t1->tv_sec;
+	time_t seconds = seconds_reminder;
+	seconds_reminder -= seconds;
 
-	if(result->tv_nsec > 0) {
+	result->tv_sec = t0->tv_sec + seconds;
+	result->tv_nsec = t0->tv_nsec + alpha * t1->tv_nsec + seconds_reminder * GIGA;
+
+	if (result->tv_nsec > 0) {
 		result->tv_sec += result->tv_nsec / GIGA;
 		result->tv_nsec %= GIGA;
 	} else {
@@ -110,7 +114,7 @@ void usr_signal_handler(int signum)
 
 	// let's read socket
 
-	fscanf(sock_stream, "%lf:%ld:%ld", &fake_time_alpha, &(fake_time_beta.tv_sec), &(fake_time_beta.tv_nsec));
+	fscanf(fd_stream, "%lf:%ld:%ld", &fake_time_alpha, &(fake_time_beta.tv_sec), &(fake_time_beta.tv_nsec));
 	get_real_time(&fake_time_t0);
 	
 	printf("mia done request %d\n", signum);
@@ -150,8 +154,8 @@ void init()
 	real_mach_absolute_time = dlsym(RTLD_NEXT, "mach_absolute_time");
 	submit_usr_handler();
 
-	sock = socket(AF_UNIX, SOCK_STREAM, 0);
-	if(sock < 0) {
+	fd= socket(AF_UNIX, SOCK_STREAM, 0);
+	if(fd< 0) {
 		perror("opening stream socket");
 		exit(1);
 	}
@@ -171,16 +175,16 @@ void init()
 	server.sun_family = AF_UNIX;
 	strcpy(server.sun_path, getenv("SANDS_SUN"));
 	
-	if(connect(sock, (struct sockaddr *) &server, sizeof(struct sockaddr_un)) < 0) {
-		close(sock);
+	if(connect(fd, (struct sockaddr *) &server, sizeof(struct sockaddr_un)) < 0) {
+		close(fd);
 		perror("connecting stream socket");
 		exit(1);
 	}
 
-	sock_stream = fdopen(sock, "r");
+	fd_stream = fdopen(fd, "r");
 
-	if(sock_stream == NULL) {
-		close(sock);
+	if(fd_stream == NULL) {
+		close(fd);
 		perror("connecting stream socket");
 		exit(1);
 	}
