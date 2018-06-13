@@ -40,8 +40,10 @@ static int          initialized = 0;
 static double				fake_time_alpha = 1;
 static struct timespec		fake_time_beta = {0, 0};
 static struct timespec		fake_time_t0 = {0, 0};
-static time_t				fake_time_delta = 0;
 
+#ifndef __APPLE__
+static time_t				fake_time_delta = 0;
+#endif
 
 static int	    	fd = 0;
 static FILE*	    fd_stream = NULL;
@@ -70,8 +72,9 @@ void bend_time(struct timespec *result, struct timespec *t0, struct timespec *t1
 int get_real_time(struct timespec *time)
 {
 #ifdef __APPLE__
-	// TODO @rajabzz
-	return 0;
+	// (*real_mach_absolute_time)();
+	int status = (*real_clock_gettime)(CLOCK_REALTIME, time);
+	return status;
 #else
 	int status = (*real_clock_gettime)(CLOCK_MONOTONIC, time);
 
@@ -154,7 +157,7 @@ void init()
 	real_mach_absolute_time = dlsym(RTLD_NEXT, "mach_absolute_time");
 	submit_usr_handler();
 
-	fd= socket(AF_UNIX, SOCK_STREAM, 0);
+	fd = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (fd< 0) {
 		perror("opening stream socket");
 		exit(1);
@@ -174,7 +177,7 @@ void init()
 
 	server.sun_family = AF_UNIX;
 	strcpy(server.sun_path, getenv("SANDS_SUN"));
-	
+
 	if (connect(fd, (struct sockaddr *) &server, sizeof(struct sockaddr_un)) < 0) {
 		close(fd);
 		perror("connecting stream socket");
@@ -188,7 +191,6 @@ void init()
 		perror("connecting stream socket");
 		exit(1);
 	}
-
 
 	initialized = 1;
 }
@@ -208,13 +210,19 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp)
 
 uint64_t mach_absolute_time()
 {
-	// TODO @rajabzz
-	uint64_t real_mach_time = real_mach_absolute_time();
-	// TODO time shift
-	return real_mach_time - 150000000;
+	if(!initialized) {
+		return 10;
+	}
+
+	uint64_t real_mach_time = (*real_mach_absolute_time)();
+	return real_mach_time;
 }
 
+#ifdef __APPLE__
+int gettimeofday(struct timeval *__restrict tp, void *tz)
+#else
 int gettimeofday(struct timeval *__restrict tp, __timezone_ptr_t tz)
+#endif
 {
 	if (!initialized) {
 		init();
