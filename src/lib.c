@@ -155,7 +155,7 @@ void init()
 	submit_usr_handler();
 
 	fd= socket(AF_UNIX, SOCK_STREAM, 0);
-	if(fd< 0) {
+	if (fd< 0) {
 		perror("opening stream socket");
 		exit(1);
 	}
@@ -175,7 +175,7 @@ void init()
 	server.sun_family = AF_UNIX;
 	strcpy(server.sun_path, getenv("SANDS_SUN"));
 	
-	if(connect(fd, (struct sockaddr *) &server, sizeof(struct sockaddr_un)) < 0) {
+	if (connect(fd, (struct sockaddr *) &server, sizeof(struct sockaddr_un)) < 0) {
 		close(fd);
 		perror("connecting stream socket");
 		exit(1);
@@ -183,7 +183,7 @@ void init()
 
 	fd_stream = fdopen(fd, "r");
 
-	if(fd_stream == NULL) {
+	if (fd_stream == NULL) {
 		close(fd);
 		perror("connecting stream socket");
 		exit(1);
@@ -199,7 +199,7 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp)
 		init();
 	}
 
-	if(clk_id != CLOCK_MONOTONIC) {
+	if (clk_id != CLOCK_MONOTONIC) {
 		// TODO implement something here
 	}
 	
@@ -219,6 +219,7 @@ int gettimeofday(struct timeval *__restrict tp, __timezone_ptr_t tz)
 	if (!initialized) {
 		init();
 	}
+
 	struct timespec real_tp;
 	int status = get_fake_time(&real_tp);
 	
