@@ -41,7 +41,11 @@ static double				fake_time_alpha = 1;
 static struct timespec		fake_time_beta = {0, 0};
 static struct timespec		fake_time_t0 = {0, 0};
 
-#ifndef __APPLE__
+#ifdef __APPLE__
+static struct timespec		apple_launch_time = {0, 0};
+static uint64_t 					apple_launch_tick = 0;
+mach_timebase_info_data_t apple_tick_info;
+#else
 static time_t				fake_time_delta = 0;
 #endif
 
@@ -72,9 +76,22 @@ void bend_time(struct timespec *result, struct timespec *t0, struct timespec *t1
 int get_real_time(struct timespec *time)
 {
 #ifdef __APPLE__
-	// (*real_mach_absolute_time)();
-	int status = (*real_clock_gettime)(CLOCK_REALTIME, time);
-	return status;
+	// This approach also works TODO check performance
+	// int status = (*real_clock_gettime)(CLOCK_REALTIME, time);
+	// return status;
+	uint64_t delta = (*real_mach_absolute_time)() - apple_launch_tick;
+	time->tv_sec = apple_launch_time.tv_sec;
+	time->tv_nsec = apple_launch_time.tv_nsec;
+
+	// //TODO pre-calculate the ratio
+	delta *= apple_tick_info.numer;
+	delta /= apple_tick_info.denom; 
+
+	time->tv_nsec += delta;
+
+	time->tv_sec += time->tv_nsec / GIGA;
+	time->tv_nsec %= GIGA;
+	return 0;
 #else
 	int status = (*real_clock_gettime)(CLOCK_MONOTONIC, time);
 
@@ -158,13 +175,17 @@ void init()
 	submit_usr_handler();
 
 	fd = socket(AF_UNIX, SOCK_STREAM, 0);
-	if (fd< 0) {
+	if (fd < 0) {
 		perror("opening stream socket");
 		exit(1);
 	}
 
 
-#ifndef __APPLE__
+#ifdef __APPLE__
+	(*real_clock_gettime)(CLOCK_REALTIME, &apple_launch_time);
+	apple_launch_tick = (*real_mach_absolute_time)();
+	mach_timebase_info(&apple_tick_info);
+#else
 	struct timespec tp;
 	struct timeval tv;
 	(*real_clock_gettime)(CLOCK_MONOTONIC, &tp);
@@ -208,15 +229,23 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp)
 	return get_fake_time(tp);
 }
 
+#ifdef __APPLE__
 uint64_t mach_absolute_time()
 {
 	if(!initialized) {
 		return 10;
 	}
+	struct timespec tp;
+	get_fake_time(&tp);
+	uint64_t tick = (uint64_t)(tp.tv_sec - apple_launch_time.tv_sec) * GIGA + (uint64_t)(tp.tv_nsec - apple_launch_time.tv_nsec);
+	tick *= apple_tick_info.denom;
+	tick /= apple_tick_info.numer;
 
-	uint64_t real_mach_time = (*real_mach_absolute_time)();
-	return real_mach_time;
+	tick += apple_launch_tick;
+	
+	return tick;
 }
+#endif
 
 #ifdef __APPLE__
 int gettimeofday(struct timeval *__restrict tp, void *tz)
