@@ -127,7 +127,7 @@ int get_fake_time(struct timespec *time)
 
 void usr_signal_handler(int signum)
 {
-	printf("mia handles request %d\n", signum);
+	printf("process handles request: %d\n", signum);
 	if (real_usr_signal_handler) {
 		(*real_usr_signal_handler)(signum);
 	}
@@ -135,9 +135,10 @@ void usr_signal_handler(int signum)
 	// let's read socket
 
 	fscanf(fd_stream, "%lf:%ld:%ld", &fake_time_alpha, &(fake_time_beta.tv_sec), &(fake_time_beta.tv_nsec));
+	printf("change time to alpha: %lf second: %ld nanosecond: %ld\n", fake_time_alpha, fake_time_beta.tv_sec, fake_time_beta.tv_nsec);
 	get_real_time(&fake_time_t0);
 	
-	printf("mia done request %d\n", signum);
+	printf("process done the request: %d\n", signum);
 }
 
 int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact)
